@@ -1,0 +1,132 @@
+% Script to run the Snyder filter on specific 2 state MC inputs with clear
+% deletions, insertions and delays in order to test the effects of these
+% distorted streams on the estimate
+clear all
+clc
+close all
+
+% Specify location inputs
+locfolder1 = 'doubleAddit';
+locfolder2 = 'dbAdd1';
+savename = 'distortPhLong';
+
+
+% Obtain source files - Gillespie simulation data
+cd(locfolder1);
+cd(locfolder2);
+files = dir('*.mat');
+cd ..
+cd ..
+flen = length(files);
+
+% Set options on distortion structure
+lenTh = 10;
+noiseMeth = 3*ones(1, lenTh);
+paramDistr = 1./(10:10:200);
+delayDistr = ones(1, lenTh);
+noiseTraits = cell(lenTh, 1);
+for i = 1:lenTh
+    noiseStruc.meth = noiseMeth(i);
+    noiseStruc.paramDistr = paramDistr(:, i);
+    noiseStruc.delayDistr = delayDistr(i);
+    noiseTraits{i} = noiseStruc;
+end
+
+% Set control parameters including a cap on the photons allowed
+adjust = 1;
+limPhoton = 20000;
+
+% Declare loop variables
+MSEreal = zeros(1, flen);
+MSEest = zeros(lenTh, flen);
+lenTreal = zeros(1, flen);
+lenTest = zeros(lenTh, flen);
+distTest = zeros(lenTh, flen);
+Treal = cell(1, flen);
+Test = cell(1, flen);
+beta = zeros(1, flen);
+gamma = zeros(1, flen);
+
+% Main loop loads every file in turn and runs the Snyder filter on it with
+% the appropriate distortion setting
+for i = 1:flen
+    % Distort appropriate Gillespie data and store data in output
+    simname = files(i).name;
+    outDist = cleanDistort(locfolder1, locfolder2, adjust, noiseTraits, limPhoton, simname);
+    
+    % Assign suitable outputs
+    MSEreal(i) = outDist.mseAct;
+    MSEest(:, i) = outDist.mseEst;
+    Test{i} = outDist.Test;
+    Treal{i} = outDist.Treal;
+    distTest(:, i) = outDist.distTest;
+    lenTreal(i) = outDist.lenTreal;
+    lenTest(:, i) = outDist.lenTest;
+    beta(i) = outDist.beta;
+    gamma(i) = outDist.gamma;
+    
+    % Display progress
+    disp('***************************************************************');
+    disp(['Completed iteration ' num2str(i) ' on ' simname]);
+    disp('***************************************************************');
+end
+
+% Save complete data
+cd(locfolder1);
+cd(locfolder2);
+cd('complete');
+save(savename);
+cd ..
+cd ..
+cd ..
+
+% Sort data in ascending beta with fixed gamma
+if ~all(gamma == gamma(1))
+    error('Simulations done over a non-constant gamma');
+else
+    gam = gamma(1);
+    [beta isort] = sort(beta);
+    MSEreal = MSEreal(isort);
+    MSEest = MSEest(:, isort);
+    Test = Test{isort};
+    Treal = Treal{isort};
+    distTest = distTest(:, isort);
+    lenTest = lenTest(:, isort);
+    lenTreal = lenTreal(isort);
+end
+
+% Save complete and sorted data
+cd(locfolder1);
+cd(locfolder2);
+cd('complete');
+save(savename);
+cd ..
+cd ..
+cd ..
+
+% Plot the distorted and real MSE
+figure;
+plot(beta, MSEreal, 'k--');
+hold on
+plot(beta, MSEest, '--');
+hold off
+xlabel('beta');
+ylabel('mse estimates');
+title('Comparison of Snyder estimates across distortions');
+
+% Plot the distorted and actual number of photons
+figure;
+plot(beta, lenTreal, 'k');
+hold on
+plot(beta, lenTest);
+hold off
+xlabel('beta');
+ylabel('no. photons');
+title('Comparison of number of photons across distortions');
+
+% Plot the spike metric
+figure;
+plot(beta, distTest);
+xlabel('beta');
+ylabel('metric distance');
+title('Spike metric across distortions');
