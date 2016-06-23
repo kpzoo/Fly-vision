@@ -1,0 +1,266 @@
+% Simple script to plot double batch results
+% clear all
+clc
+close all
+% datafol = '10k data';
+datafol = 'mixed data';
+fitMSE = 0;
+yesSny = 1;
+
+% Obtain the data files from specified folder and assume data specified in
+% terms of a constant beta range <---------------------------------------
+cd(datafol);
+dbfiles = dir('*.mat');
+dblen = length(dbfiles);
+load(dbfiles(1).name);
+betalen = length(beta);
+cd ..
+
+% Output storage arrays for combined results assuming variation is across
+% kbirth for 2 state symmetric MC <---------------------------------------
+MSEdb = zeros(dblen, betalen);
+psidb_slack = zeros(dblen, betalen);
+psidb_tight = zeros(dblen, betalen);
+dslackdb = zeros(dblen, betalen);
+dtightdb = zeros(dblen, betalen);
+lamMeandb = zeros(dblen, betalen);
+lamMeanCapdb = zeros(dblen, betalen);
+lamVardb = zeros(dblen, betalen);
+lamVarCapdb = zeros(dblen, betalen);
+betadb = zeros(dblen, betalen);
+kbirdb = zeros(dblen, betalen);
+gammadb = zeros(dblen, betalen);
+traindb = zeros(dblen, betalen);
+testdb = zeros(dblen, betalen);
+
+% Loop across files sorting data and compiling results
+for idb = 1:dblen
+    % Load data file in turn
+    cd(datafol);
+    idbname = dbfiles(idb).name;
+    load(idbname);
+    cd ..
+
+    % Sort data in ascending beta order and assign to main variables,
+    % assuming a everythin is ordered as beta <-------------------------
+    [betadb(idb, :) isort] = sort(beta);
+    MSEdb(idb, :) = mseErrx1(isort);
+    lamMeandb(idb, :) = lamMean(isort);
+    lamMeanCapdb(idb, :) = lamMeanCap(isort);
+    lamVardb(idb, :) = lamVar(isort);
+    lamVarCapdb(idb, :) = lamVarCap(isort);
+    kbirdb(idb, :) = kbirth(isort);
+    dslackdb(idb, :) = dslack(isort);
+    dtightdb(idb, :) = dtight(isort);
+    psidb_slack(idb, :) = psi_slack(isort);
+    psidb_tight(idb, :) = psi_tight(isort);
+    testdb(idb, :) = test_size(isort);
+    traindb(idb, :) = train_size(isort);
+
+    % Calculate gamma assuming avgQBwid = 100 and check that it is constant
+    % on each run
+    gammadb(idb, :) = 1./kbirdb(idb, :)/100;
+    if ~all(gammadb(idb, :) == gammadb(idb, 1))
+        error(['Non-constant gamma in file ' idbname]);
+    end
+    disp(['Completed compilation for file: ' idbname]);
+end
+
+% Check beta is constant across runs
+beta1 = betadb(1, :);
+for ib = 2:dblen
+    if ~all(abs(betadb(ib, :) - beta1) < 10^-9)
+        error('The beta ranges are not consistent across runs');
+    end
+end
+
+% Remove redundant data
+dslack1 = dslackdb(1, :);
+dtight1 = dtightdb(1, :);
+gamma1 = gammadb(:, 1);
+
+% Sort data into increasing gamma
+[gamma1 isort] = sort(gamma1);
+MSEdb = MSEdb(isort, :);
+psidb_slack = psidb_slack(isort, :);
+psidb_tight = psidb_tight(isort, :);
+lamMeandb = lamMeandb(isort, :);
+lamMeanCapdb = lamMeanCapdb(isort, :);
+lamVarCapdb = lamVarCapdb(isort, :);
+lamVarCapdb = lamVarCapdb(isort, :);
+testdb = testdb(isort, :);
+traindb = traindb(isort, :);
+
+% Fit the MSE curves if required and reorder correctly
+if fitMSE
+    deg1 = 1;
+    deg2 = 2;
+    deg3 = 2;
+    MSEfit = zeros(dblen, betalen);
+    psi_slackfit = zeros(dblen, betalen);
+    psi_tightfit = zeros(dblen, betalen);
+    for idb = 1:dblen
+        [p S mu] = polyfit(beta1, MSEdb(idb, :), deg1);
+        MSEfit(idb, :) = polyval(p, beta1, S, mu);
+        [p S mu] = polyfit(beta1, psidb_tight(idb, :), deg2);
+        psi_tightfit(idb, :) = polyval(p, beta1, S, mu);
+        [p S mu] = polyfit(beta1, psidb_slack(idb, :), deg3);
+        psi_slackfit(idb, :) = polyval(p, beta1, S, mu);
+    end
+    MSEfit = MSEfit(isort, :);
+    psi_slackfit = psi_slackfit(isort, :);
+    psi_tightfit = psi_tightfit(isort, :);
+end
+
+% Save compiled data
+save('dbDataCompiled.mat');
+
+% Plot compiled mse and bounds
+figure;
+plot(beta1, [dslack1' dtight1']);
+hold on
+if ~fitMSE
+    plot(beta1, MSEdb, '-o');
+else
+    plot(beta1, MSEfit, beta1, MSEdb ,'o');
+end
+hold off
+legend('dslack', 'dtight', 'MSE', 'location', 'best');
+xlabel('beta');
+ylabel('mse and bounds');
+title('GP estimation and bounds across beta for 2 state MC');
+
+% Plot psi values
+figure;
+if ~fitMSE
+    plot(beta1, psidb_tight);
+else
+    plot(beta1, psi_tightfit, beta1, psidb_tight, 'o');
+end
+hold on
+if ~fitMSE
+    plot(beta1, psidb_slack);
+else
+    plot(beta1, psi_slackfit, beta1, psidb_slack, 'o');
+end
+hold off
+xlabel('beta');
+ylabel('psi ratios');
+title('GP estimation psi ratios for 2 state MC');
+
+% Plot mse across gamma
+figure;
+if ~fitMSE
+    plot(gamma1, MSEdb);
+else
+    plot(gamma1, MSEfit);
+end
+xlabel('gamma');
+ylabel('mse');
+title('GP estimation across gamma for 2 state MC');
+
+% Plot mean intensity estimate across runs
+figure;
+semilogy(beta1, lamMeandb, beta1, lamMeanCapdb, '--');
+xlabel('beta');
+ylabel('mean intensity and its estimate');
+title('GP estimation of mean intensity for 2 state MC');
+
+% Plot var intensity estimate across runs
+figure;
+semilogy(beta1, lamVardb(2:end, :), beta1, lamVarCapdb(2:end, :), 'o');
+xlabel('beta');
+ylabel('var intensity and its estimate');
+title('GP estimation of var intensity for 2 state MC');
+
+% Plots to describe how lamMean and MSE interact
+figure;
+plot(lamMeandb', MSEdb');
+xlabel('mean intensity');
+ylabel('mse');
+title('View of mean intensity - GP MSE relation across gamma');
+figure;
+subplot(2, 1, 1);
+plot(beta1, lamMeandb);
+ylabel('mean intensity');
+xlabel('beta');
+title('View of mean intensity - beta relation across gamma');
+subplot(2, 1, 2);
+plot(gamma1, lamMeandb);
+ylabel('mean intensity');
+xlabel('gamma');
+title('View of mean intensity - gamma relation across beta');
+
+% Plots involving Snyder data using mse estimate 3
+if yesSny
+    % Load Snyder data and check consistency of parameters with reordering
+    clear gamma beta MSEc
+    load('snyCompData.mat', 'beta', 'gamma', 'MSEc');
+    if ~all(abs(beta - beta1) < 10^-9)
+        error('Snyder and GP beta values do not match');
+    end
+    [gamma isnySort] = sort(gamma);
+    gamma1 = gamma1';
+    MSEc = MSEc(isnySort, :);
+    if ~all(abs(gamma - gamma1) < 10^-9)
+        error('Snyder and GP gamma values do not match');
+    end
+
+    % Plot simple MSE comparison with raw data across beta
+    figure;
+    plot(beta, MSEc, '--', beta1, MSEdb);
+    xlabel('beta');
+    ylabel('mse GP and Sny');
+    title('GP estimation and Snyder MSE across beta for 2 state MC');
+
+    % Plot MSE comparisons with raw data across gamma
+    figure;
+    plot(gamma, MSEc, 'o', gamma1, MSEdb, 's');
+    xlim([min(gamma)-1 max(gamma)+1]);
+    xlabel('gamma');
+    ylabel('mse GP and Sny');
+    title('GP estimation and Snyder MSE across gamma for 2 state MC');
+
+    % Plot ratio of GP to Snyder MSE
+    psiGPSny = MSEdb./MSEc;
+    figure;
+    plot(beta1, psiGPSny, 'o-');
+    xlabel('beta');
+    ylabel('ratio mse GP to mse Sny');
+    title('Ratio of MSE of GP to Snyder across beta for 2 state MC');
+
+    % Plot MSE Snyder against bounds
+    figure;
+    plot(beta, dslack1, beta, dtight1, beta, MSEc);
+    legend('dslack', 'dtight', 'MSE', 'location', 'best');
+    xlabel('beta');
+    ylabel('mse and bounds');
+    title('Snyder MSE and bounds across beta for 2 state MC');
+
+    % Plot MSE Snyder against intensity
+    figure;
+    plot(lamMeandb', MSEc');
+    xlabel('mean intensity');
+    ylabel('mse');
+    title('View of mean intensity - Snyder MSE relation across gamma');
+    
+    % Combined plot of MSE GP and Snyder against mean intensity at quartile
+    % gamma values (not a single plot due to range differences)
+    figure;
+    plen = 4;
+    quart = length(gamma1)/4;
+    quart = floor([quart.*(1:4)]);
+    for ii = 1:plen
+        subplot(2, 2, ii);
+        iq = quart(ii);
+        plot(lamMeandb(iq, :), MSEdb(iq, :), 'r');
+        hold on
+        plot(lamMeandb(iq, :), MSEc(iq, :), 'b');
+        hold off
+        xlabel('mean intensity');
+        ylabel('mse');
+        legend('GP', 'Sny', 'location', 'best');
+        title(['MSE vs intensity at gamma = ' num2str(gamma1(iq))]);
+    end
+    
+end
