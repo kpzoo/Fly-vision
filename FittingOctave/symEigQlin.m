@@ -1,0 +1,27 @@
+% Code to obtain symbolic representation of the eigenvalues of Qlin
+clear all
+clc
+close all
+
+% Specify the variables and the number of states
+syms a b k
+m = 5;
+dimQ = 2*m;
+Q = zeros(dimQ, dimQ);
+rep = dimQ/2;
+
+% Obtain the Q matrix
+d1 = repmat([k 0], 1, rep);
+d1 = d1(1:dimQ - 1);
+d1neg = d1;
+d2 = repmat([0 a], 1, rep);
+d2 = d2(1:dimQ - 2);
+Q = Q + diag(d1, 1) + diag(d2, 2) + diag(d1neg, -1);
+d0 = -sum(Q, 2);
+Q = Q + diag(d0);
+
+% Obtain the lam matrix with z = 0 and Qlin
+lam_nob = sort([0:m-1 0:m-1]);
+lam = diag(b*lam_nob);
+Qlin = Q - lam;
+eigen = eig(Qlin);
